@@ -80,7 +80,7 @@ def normalize_stringify(text):
     """Resolve different type of unicode encodings."""
     text = unicodedata.normalize('NFD', text)
     text = text.replace("-LRB-", "")
-    text = text.reaplce("-RRB-", "")
+    text = text.replace("-RRB-", "")
     text = text.replace("_", " ")
     return text
 
