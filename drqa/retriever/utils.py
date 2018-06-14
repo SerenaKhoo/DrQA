@@ -76,6 +76,14 @@ def normalize(text):
     """Resolve different type of unicode encodings."""
     return unicodedata.normalize('NFD', text)
 
+def normalize_stringify(text):
+    """Resolve different type of unicode encodings."""
+    text = unicodedata.normalize('NFD', text)
+    text = text.replace("-LRB-", "")
+    text = text.reaplce("-RRB-", "")
+    text = text.replace("_", " ")
+    return text
+
 
 def filter_word(text):
     """Take out english stopwords, punctuation, and compound endings."""

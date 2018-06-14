@@ -83,6 +83,25 @@ class TfIdfBuilder:
         data.extend(counts.values())
         return row, col, data
 
+    def count_doc_title_version(self,ngram, hash_size, doc_id):
+        """Fetch the text of a document and compute hashed ngrams counts."""
+        row, col, data = [], [], []
+        # Tokenize
+        title = retriever.utils.normalize_stringify(doc_id)
+        tokens = self.tokenize(title)
+        # Get ngrams from tokens, with stopword/punctuation filtering.
+        ngrams = tokens.ngrams(
+            n=ngram, uncased=True, filter_fn=retriever.utils.filter_ngram
+        )
+
+        # Hash ngrams and count occurences
+        counts = Counter([retriever.utils.hash(gram, hash_size) for gram in ngrams])
+
+        # Return in sparse matrix data format.
+        row.extend(counts.keys())
+        col.extend([self.DOC2IDX[doc_id]] * len(counts))
+        data.extend(counts.values())
+        return row, col, data
 
     def get_count_matrix(self):
         """Form a sparse word to document count matrix (inverted index).
@@ -92,7 +111,6 @@ class TfIdfBuilder:
         # Map doc_ids to indexes
         doc_ids = self.PROCESS_DB.get_doc_ids()
         self.DOC2IDX = {doc_id: i for i, doc_id in enumerate(doc_ids)}
-
 
         # Compute the count matrix in steps (to keep in memory)
         logger.info('Mapping...')
@@ -114,11 +132,38 @@ class TfIdfBuilder:
         count_matrix.sum_duplicates()
         return count_matrix, (self.DOC2IDX, doc_ids)
 
+    def get_count_matrix_doc_title_version(self):
+        """Form a sparse word to document count matrix (inverted index).
+
+        M[i, j] = # times word i appears in document j.
+        """
+        # Map doc_ids to indexes
+        doc_ids = self.PROCESS_DB.get_doc_ids()
+        self.DOC2IDX = {doc_id: i for i, doc_id in enumerate(doc_ids)}
+
+        # Compute the count matrix in steps (to keep in memory)
+        logger.info('Mapping...')
+        row, col, data = [], [], []
+        step = max(int(len(doc_ids) / 10), 1)
+        batches = [doc_ids[i:i + step] for i in range(0, len(doc_ids), step)]
+        _count = partial(self.count_doc_title_version, self.args.ngram, self.args.hash_size)
+        for i, batch in enumerate(batches):
+            logger.info('-' * 25 + 'Batch %d/%d' % (i + 1, len(batches)) + '-' * 25)
+            for b_row, b_col, b_data in map(_count, batch):
+                row.extend(b_row)
+                col.extend(b_col)
+                data.extend(b_data)
+
+        logger.info('Creating sparse matrix...')
+        count_matrix = sp.csr_matrix(
+            (data, (row, col)), shape=(self.args.hash_size, len(doc_ids))
+        )
+        count_matrix.sum_duplicates()
+        return count_matrix, (self.DOC2IDX, doc_ids)
 
     # ------------------------------------------------------------------------------
     # Transform count matrix to different forms.
     # ------------------------------------------------------------------------------
-
 
     def get_tfidf_matrix(self,cnts):
         """Convert the word count matrix into tfidf one.
@@ -135,7 +180,6 @@ class TfIdfBuilder:
         tfs = cnts.log1p()
         tfidfs = idfs.dot(tfs)
         return tfidfs
-
 
     def get_doc_freqs(self,cnts):
         """Return word --> # of docs it appears in."""
